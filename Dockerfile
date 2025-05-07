@@ -1,14 +1,15 @@
-# Base image
 FROM quay.io/condaforge/miniforge3:24.11.3-2
 
-# Download and verify HEASoft source tarball
-RUN curl -o /var/tmp/heasoft-6.35.1src.tar.gz https://heasarc.gsfc.nasa.gov/FTP/software/lheasoft/lheasoft6.35.1/heasoft-6.35.1src.tar.gz && \
-    echo "ffec2b5d85a66d7ddea2e69de9dac118  /var/tmp/heasoft-6.35.1src.tar.gz" | md5sum -c - || { echo "MD5 sum mismatch"; exit 1; }
+# Install curl, download, and verify HEASoft source tarball
+RUN . /opt/conda/etc/profile.d/conda.sh && \
+    conda activate base && \
+    mamba install -y -c conda-forge curl=8.13.0 && \
+    curl -o /var/tmp/heasoft-6.35.1src.tar.gz https://heasarc.gsfc.nasa.gov/FTP/software/lheasoft/lheasoft6.35.1/heasoft-6.35.1src.tar.gz && \
+    echo "ffec2b5d85a66d7ddea2e69de9dac118  /var/tmp/heasoft-6.35.1src.tar.gz" | md5sum -c - && \
+    mamba clean -afy
 
-# Untar and verify source
-RUN df -h /var/tmp && \
-    tar -xvzf /var/tmp/heasoft-6.35.1src.tar.gz -C /var/tmp || { echo "Failed to untar heasoft-6.35.1src.tar.gz"; exit 1; } && \
-    ls -l /var/tmp/heasoft-6.35.1/heacore/heasp/wcs.cxx || { echo "wcs.cxx not found in tarball"; ls -lR /var/tmp/heasoft-6.35.1/heacore/heasp; exit 1; } && \
+# Untar source
+RUN tar -xzf /var/tmp/heasoft-6.35.1src.tar.gz -C /var/tmp && \
     rm /var/tmp/heasoft-6.35.1src.tar.gz
 
 # Create Conda environment and install dependencies
@@ -83,9 +84,7 @@ RUN . /opt/conda/etc/profile.d/conda.sh && \
     ln -sf /opt/conda/envs/heasoft/bin/x86_64-conda-linux-gnu-gcc /opt/conda/envs/heasoft/bin/gcc && \
     ln -sf /opt/conda/envs/heasoft/bin/x86_64-conda-linux-gnu-g++ /opt/conda/envs/heasoft/bin/g++ && \
     ln -sf /opt/conda/envs/heasoft/bin/x86_64-conda-linux-gnu-gfortran /opt/conda/envs/heasoft/bin/gfortran && \
-    # Patch wcs.cxx
     sed -i 's|#include <wcsmath.h>|#include <wcslib/wcsmath.h>|' /var/tmp/heasoft-6.35.1/heacore/heasp/wcs.cxx && \
-    grep '#include <wcslib/wcsmath.h>' /var/tmp/heasoft-6.35.1/heacore/heasp/wcs.cxx || { echo "Failed to patch wcs.cxx"; exit 1; } && \
     cd /var/tmp/heasoft-6.35.1/BUILD_DIR && \
     ./configure --prefix=/opt/conda/envs/heasoft \
                 --enable-readline \
@@ -94,11 +93,9 @@ RUN . /opt/conda/etc/profile.d/conda.sh && \
                 --with-components="heacore ftools Xspec" \
                 --with-tcl=/opt/conda/envs/heasoft \
                 --with-tk=/opt/conda/envs/heasoft \
-                --with-wcslib=/opt/conda/envs/heasoft \
-                --verbose > configure.log 2>&1 || { cat configure.log; exit 1; } && \
-    make > make_output.log 2>&1 || { cat make_output.log; exit 1; } && \
+                --with-wcslib=/opt/conda/envs/heasoft && \
+    make && \
     make install && \
-    cp /var/tmp/heasoft-6.35.1/BUILD_DIR/*.log /opt/conda/envs/heasoft/ && \
     rm -rf /var/tmp/heasoft-6.35.1
 
 # Set environment variables for HEASoft
