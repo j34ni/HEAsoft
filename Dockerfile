@@ -1,48 +1,55 @@
 FROM quay.io/condaforge/miniforge3:24.11.3-2
 
-# Configure conda-forge channel and update mamba/conda
+# Configure conda-forge channel
 RUN conda config --add channels conda-forge && \
     conda config --set channel_priority strict && \
     mamba update -y -c conda-forge mamba conda
 
-COPY heasoft-6.35.1src.tar.gz /var/tmp/
+# Download and unpack complete HEASoft-6.35.1 source code (without older Xspec model data not needed by most users)
+RUN . /opt/conda/etc/profile.d/conda.sh && conda activate base && \
+    mamba install -y -c conda-forge curl=8.13.0 && \
+    curl -o /var/tmp/heasoft-6.35.1src.tar.gz https://heasarc.gsfc.nasa.gov/FTP/software/lheasoft/lheasoft6.35.1/heasoft-6.35.1src.tar.gz && \
+    tar -xzf /var/tmp/heasoft-6.35.1src.tar.gz -C /var/tmp && \
+    rm /var/tmp/heasoft-6.35.1src.tar.gz && \
+    mamba clean -afy
 
-# Untar source
-RUN tar -xzf /var/tmp/heasoft-6.35.1src.tar.gz -C /var/tmp && \
-    rm /var/tmp/heasoft-6.35.1src.tar.gz
-
-# Install environment with dependencies (including Python packages for Galaxy)
+# Create conda environment
 RUN . /opt/conda/etc/profile.d/conda.sh && \
-    mamba create -y --name heasoft && \
-    mamba install -y --name heasoft --channel conda-forge \
+    mamba create -y --name heasoft python=3.12 && \
+    conda activate heasoft && \
+    conda config --add channels conda-forge && \
+    conda config --set channel_priority strict && \
+    mamba update -y -c conda-forge mamba conda && \
+    conda clean --all --yes
+
+# Install packages
+RUN . /opt/conda/etc/profile.d/conda.sh && \
+    conda activate heasoft && \
+    mamba install -y \
+        _libgcc_mutex=0.1=conda_forge \
+        _openmp_mutex=4.5=2_gnu \
         astropy=6.1.4 \
         astropy-iers-data=0.2025.5.5.0.38.14 \
-        binutils=2.43 \
-        ccfits=2.6 \
-        cfitsio=4.3.1 \
-        contourpy=1.3.2 \
-        curl=8.13.0 \
+        contourpy=1.3.0 \
         cycler=0.12.1 \
-        fftw=3.3.10 \
-        fgsl=1.6.0 \
-        flex=2.6.4 \
         fonttools=4.57.0 \
-        gcc=12.4.0 \
-        gfortran=12.4.0 \
-        gsl=2.7 \
-        gxx=12.4.0 \
+        gcc=15.1.0 \
+        gfortran=15.1.0 \
+        gxx=15.1.0 \
         kiwisolver=1.4.7 \
+        libgcc-ng=15.1.0 \
+        libgfortran-ng=15.1.0 \
+        libgomp=15.1.0 \
         libpng=1.6.47 \
-        libxml2=2.12.7 \
+        libstdcxx-ng=15.1.0 \
         make=4.4.1 \
         matplotlib=3.9.2 \
         munkres=1.1.4 \
         ncurses=6.5 \
         numpy=2.1.2 \
-        packaging=25.0 \
         perl=5.32.1 \
+        perl-file-which \
         pip=25.1.1 \
-        pkg-config=0.29.2 \
         pyerfa=2.0.1.5 \
         pyparsing=3.2.3 \
         python=3.12 \
@@ -50,71 +57,54 @@ RUN . /opt/conda/etc/profile.d/conda.sh && \
         pyyaml=6.0.2 \
         readline=8.2 \
         scipy=1.14.1 \
-        six=1.17.0 \
-        tk=8.6.13 \
-        wcslib=8.2.2 \
-        xorg-libx11=1.8.10 \
-        xorg-libxext=1.3.6 \
-        xorg-libxfixes=6.0.1 \
-        xorg-libxft=2.3.8 \
-        xorg-libxi=1.8.2 \
-        xorg-libxmu=1.1.3 \
+        six=1.16.0 \
+        xorg-libx11=1.8.12 \
         xorg-libxt=1.3.0 \
+        xorg-libxext=1.3.6 \
         xorg-xproto=7.0.31 \
-        zlib=1.3.1 > mamba_install.log 2>&1 || (cat mamba_install.log && exit 1) && \
-    mamba clean --all
+        xorg-util-macros=1.20.2 \
+        xorg-kbproto=1.0.7 \
+        xorg-inputproto=2.3.2 \
+        xorg-xf86vidmodeproto=2.3.1 \
+        xorg-xextproto=7.3.0 \
+        zlib=1.3.1 && \
+    mamba clean --all --yes && \
+    perl -MCPAN -e 'install Devel::CheckLib'
 
-# Debug: Verify X11 headers are present
+# Configure and build HEASoft-6.35.1 from the previously downloaded source
 RUN . /opt/conda/etc/profile.d/conda.sh && \
     conda activate heasoft && \
-    ls -l $CONDA_PREFIX/include/X11/Xlib.h || (echo "X11/Xlib.h not found!" && exit 1) && \
-    ls -l $CONDA_PREFIX/include/X11/Intrinsic.h || (echo "X11/Intrinsic.h not found!" && exit 1)
-
-# Debug: Verify cfortran.h is present in the correct location
-RUN . /opt/conda/etc/profile.d/conda.sh && \
-    conda activate heasoft && \
-    ls -l /var/tmp/heasoft-6.35.1/heacore/cfitsio/cfortran.h || (echo "cfortran.h not found in heacore/cfitsio!" && exit 1)
-
-# Debug: Verify libpng is present
-RUN . /opt/conda/etc/profile.d/conda.sh && \
-    conda activate heasoft && \
-    ls -l $CONDA_PREFIX/lib/libpng* || (echo "libpng not found!" && exit 1)
-
-# Debug: Verify Xspec component is present in the source tree
-RUN . /opt/conda/etc/profile.d/conda.sh && \
-    conda activate heasoft && \
-    ls -ld /var/tmp/heasoft-6.35.1/Xspec || (echo "Xspec directory not found in source tree!" && exit 1)
-
-# Debug: Verify Tcl/Tk source is present in the tarball
-RUN . /opt/conda/etc/profile.d/conda.sh && \
-    conda activate heasoft && \
-    ls -ld /var/tmp/heasoft-6.35.1/tcltk/tcl /var/tmp/heasoft-6.35.1/tcltk/tk || (echo "Tcl/Tk source directories not found in tarball!" && exit 1)
-
-# Configure and build HEASoft
-RUN . /opt/conda/etc/profile.d/conda.sh && \
-    conda activate heasoft && \
-    export PATH=$CONDA_PREFIX/bin:$PATH && \
     export CC=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc && \
     export CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++ && \
     export FC=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gfortran && \
-    export CFLAGS="-I$CONDA_PREFIX/include -I$CONDA_PREFIX/include/libxml2 -I$CONDA_PREFIX/include/wcslib -I$CONDA_PREFIX/include/cfitsio -I$CONDA_PREFIX/include/X11 -I/var/tmp/heasoft-6.35.1/heacore/cfitsio -Wno-unused-function -Wno-unused-but-set-variable" && \
-    export CXXFLAGS="-I$CONDA_PREFIX/include -I$CONDA_PREFIX/include/libxml2 -I$CONDA_PREFIX/include/wcslib -I$CONDA_PREFIX/include/cfitsio -I$CONDA_PREFIX/include/X11 -I/var/tmp/heasoft-6.35.1/heacore/cfitsio -Wno-unused-function -Wno-unused-but-set-variable" && \
-    export LDFLAGS="-L$CONDA_PREFIX/lib -lwcs -lcfitsio -lgsl -lgslcblas -lfftw3 -lreadline -lncurses -lX11 -lXext -lXt -lXmu -lXi -lXft -lXfixes -lpng" && \
-    export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH && \
-    export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig && \
+    export PERL=$CONDA_PREFIX/bin/perl && \
+    export PYTHON=$CONDA_PREFIX/bin/python && \
     ln -sf $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-ar $CONDA_PREFIX/bin/ar && \
     ln -sf $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-ranlib $CONDA_PREFIX/bin/ranlib && \
     ln -sf $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-nm $CONDA_PREFIX/bin/nm && \
     ln -sf $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-objdump $CONDA_PREFIX/bin/objdump && \
+    ln -sf $CONDA_PREFIX/bin/x86_64-conda-linux-gnu-ld $CONDA_PREFIX/bin/ld && \
+    unset CFLAGS CXXFLAGS FFLAGS LDFLAGS build_alias host_alias && \
+    export CFLAGS="-I$CONDA_PREFIX/include" && \
+    export LDFLAGS="-L$CONDA_PREFIX/lib -lz" && \
     cd /var/tmp/heasoft-6.35.1/BUILD_DIR && \
     ./configure --prefix=$CONDA_PREFIX \
                 --x-includes=$CONDA_PREFIX/include \
                 --x-libraries=$CONDA_PREFIX/lib && \
-    make -j1 2> make_error.log || (cat make_error.log && exit 1) && \
+    make && \
     make install && \
-    ls -l $CONDA_PREFIX/bin/tclsh* $CONDA_PREFIX/bin/wish* || (echo "Tcl/Tk binaries not installed!" && exit 1) && \
     rm -rf /var/tmp/heasoft-6.35.1
 
+# Install heasoftpy-6.35.1
+RUN . /opt/conda/etc/profile.d/conda.sh && \
+    conda activate heasoft && \
+    export HEADAS=$CONDA_PREFIX/x86_64-pc-linux-gnu-libc2.39 && \
+    . $HEADAS/headas-init.sh && \
+    pip install git+https://github.com/HEASARC/heasoftpy.git
+
 # Copy start script
-COPY ./start.sh /opt/heasoft/start.sh
+COPY start.sh /opt/heasoft/start.sh
 RUN chmod +x /opt/heasoft/start.sh
+
+WORKDIR /workspace
+ENTRYPOINT ["/opt/heasoft/start.sh"]
