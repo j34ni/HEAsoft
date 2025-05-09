@@ -1,17 +1,4 @@
-FROM quay.io/condaforge/miniforge3:24.11.3-2
-
-# Configure conda-forge channel
-RUN conda config --add channels conda-forge && \
-    conda config --set channel_priority strict && \
-    mamba update -y -c conda-forge mamba conda
-
-# Download and unpack complete HEASoft-6.35.1 source code (without older Xspec model data not needed by most users)
-RUN . /opt/conda/etc/profile.d/conda.sh && conda activate base && \
-    mamba install -y -c conda-forge curl=8.13.0 && \
-    curl -o /var/tmp/heasoft-6.35.1src.tar.gz https://heasarc.gsfc.nasa.gov/FTP/software/lheasoft/lheasoft6.35.1/heasoft-6.35.1src.tar.gz && \
-    tar -xzf /var/tmp/heasoft-6.35.1src.tar.gz -C /var/tmp && \
-    rm /var/tmp/heasoft-6.35.1src.tar.gz && \
-    mamba clean -afy
+FROM quay.io/jeani/heasoft:main
 
 # Create conda environment
 RUN . /opt/conda/etc/profile.d/conda.sh && \
